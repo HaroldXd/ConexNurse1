@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat con el doctor</title>
+    <!-- Include the Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <!-- Add Firebase products that you want to use -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 200px;
+            background-color: #f0f0f0;
+            overflow-y: auto;
+            padding: 10px;
+            border-right: 1px solid #ccc;
+        }
+        .sidebar h3 {
+            margin-bottom: 10px;
+        }
+        .chat-list {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+        .chat-list-item {
+            margin-bottom: 10px;
+            cursor: pointer;
+            padding: 5px;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .chat-list-item:hover {
+            background-color: #f0f0f0;
+        }
+        .chat-container {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        .chat-messages {
+            max-height: calc(100vh - 120px);
+            overflow-y: auto;
+            padding-right: 20px;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+        .message.left {
+            text-align: left;
+            background-color: #e0f7fa;
+            align-self: flex-start;
+        }
+        .message.right {
+            text-align: right;
+            background-color: #c8e6c9;
+            align-self: flex-end;
+        }
+        .message .sender {
+            font-weight: bold;
+        }
+        .message .time {
+            font-size: 0.8em;
+            color: #555;
+        }
+        .message-input {
+            display: flex;
+            align-items: center;
+            margin-top: 20px;
+        }
+        .message-input input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-right: 10px;
+            outline: none;
+        }
+        .message-input button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            outline: none;
+        }
+        .message-input button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <h3>Historial de Chats</h3>
+            <ul class="chat-list" id="chatList">
+                <!-- Chats del cliente se cargarán aquí dinámicamente -->
+            </ul>
+        </div>
+        <div class="chat-container">
+            <h2>Chat con el doctor</h2>
+            <div class="chat-messages" id="chatWindow">
+                <!-- Chat messages will be displayed here -->
+            </div>
+            <form id="messageForm" class="message-input">
+                <input type="text" id="messageInput" placeholder="Escribe tu mensaje" required>
+                <button type="submit">Enviar</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyC4uH1rxmJZyvDn-e8xnLyZ3KFOGgjSPPQ",
+            authDomain: "conexnurse.firebaseapp.com",
+            projectId: "conexnurse",
+            storageBucket: "conexnurse.appspot.com",
+            messagingSenderId: "168276042658",
+            appId: "1:168276042658:web:99c2d9e5d2934aba8348fb",
+            measurementId: "G-FNBJTTY1MD"
+        };
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        var db = firebase.firestore();
+        var auth = firebase.auth();
+
+        auth.onAuthStateChanged(function(user) {
+            if (user) {
+                console.log("Usuario autenticado:", user.uid);
+                loadMessages(); // Cargar los mensajes cuando el usuario esté autenticado
+                loadChatList(user.uid); // Cargar la lista de chats del cliente
+            } else {
+                console.error("No hay usuario autenticado.");
+                // Aquí puedes manejar cómo deseas notificar al usuario o redirigirlo al inicio de sesión
+                // Por ejemplo, podrías mostrar un mensaje en la interfaz de usuario o redirigir a la página de inicio de sesión
+            }
+        });
+
+        function loadMessages() {
+            var chatId = sessionStorage.getItem('chatId');
+            var chatRef = db.collection("chats").doc(chatId);
+
+            chatRef.onSnapshot(function(doc) {
+                var chatWindow = document.getElementById('chatWindow');
+                chatWindow.innerHTML = ""; // Limpiar el contenido anterior antes de cargar nuevos mensajes
+                var messages = doc.data().messages || [];
+
+                // Ordenar los mensajes por timestamp (más reciente al final)
+                messages.sort(function(a, b) {
+                    return new Date(a.timestamp) - new Date(b.timestamp);
+                });
+
+                messages.forEach(function(message) {
+                    var messageElement = document.createElement('div');
+                    var senderClass = message.sender === auth.currentUser.uid ? 'right' : 'left';
+                    var timestamp = message.timestamp instanceof Date ? message.timestamp : new Date(message.timestamp); // Convertir a Date si es un string
+                    var timeString = timestamp.toLocaleString(); // Convertir timestamp a formato legible
+                    messageElement.className = `message ${senderClass}`;
+                    var senderName = senderClass === 'right' ? 'Tú' : 'Doctor'; // Definir el nombre del remitente
+                    messageElement.innerHTML = `<span class="sender">${senderName}:</span> ${message.text} <span class="time">(${timeString})</span>`;
+                    chatWindow.appendChild(messageElement); // Agregar cada mensaje como un nuevo elemento
+                });
+
+                chatWindow.scrollTop = chatWindow.scrollHeight; // Scroll to bottom después de agregar todos los mensajes
+            });
+        }
+
+        function loadChatList(clientId) {
+            var chatListElement = document.getElementById('chatList');
+            db.collection('chats').where('cliente.id', '==', clientId).onSnapshot(function(querySnapshot) {
+                chatListElement.innerHTML = ''; // Limpiar la lista de chats
+                querySnapshot.forEach(function(doc) {
+                    var chatData = doc.data();
+                    var chatListItem = document.createElement('li');
+                    chatListItem.className = 'chat-list-item';
+                    var consultaType = chatData.consulta === 'emergencia' ? 'Emergencia' : 'Urgencia'; // Tipo de consulta
+                    var lastMessage = chatData.messages.length > 0 ? chatData.messages[chatData.messages.length - 1].text : 'No hay mensajes'; // Último mensaje
+                    var lastMessageTime = chatData.messages.length > 0 ? new Date(chatData.messages[chatData.messages.length - 1].timestamp).toLocaleString() : ''; // Hora del último mensaje
+                    chatListItem.textContent = `${consultaType} - Último mensaje: ${lastMessage} (${lastMessageTime})`;
+                    chatListItem.addEventListener('click', function() {
+                        sessionStorage.setItem('chatId', doc.id);
+                        // Cargar mensajes del chat seleccionado
+                        loadMessages();
+                    });
+                    chatListElement.appendChild(chatListItem);
+                });
+            });
+        }
+
+        document.getElementById('messageForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            var messageInput = document.getElementById('messageInput');
+            var newMessage = messageInput.value.trim(); // Limpiar espacios en blanco del mensaje
+            if (newMessage !== '') {
+                var user = auth.currentUser;
+                if (user) {
+                    var formattedTimestamp = new Date().toISOString(); // Timestamp en formato ISO
+                    var chatId = sessionStorage.getItem('chatId');
+                    var chatRef = db.collection("chats").doc(chatId);
+
+                    chatRef.update({
+                        messages: firebase.firestore.FieldValue.arrayUnion({
+                            text: newMessage,
+                            sender: user.uid,
+                            timestamp: formattedTimestamp  // Guardar el timestamp en formato ISO
+                        })
+                    }).then(function() {
+                        messageInput.value = ""; // Limpiar el input después de enviar
+                        // Ajustar el scroll para que el mensaje enviado sea visible
+                        var chatWindow = document.getElementById('chatWindow');
+                        chatWindow.scrollTop = chatWindow.scrollHeight;
+                    }).catch(function(error) {
+                        console.error("Error sending message:", error);
+                    });
+                } else {
+                    console.error("No user is currently signed in.");
+                }
+            }
+        });
+
+        // Mejorar la experiencia de escritura en el campo de mensaje
+        var messageInput = document.getElementById('messageInput');
+        messageInput.addEventListener('keydown', function(event) {
+            // Ajustar la altura del área de mensajes según el contenido
+            var chatWindow = document.getElementById('chatWindow');
+            chatWindow.style.height = "calc(100vh - 240px)";
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        });
+
+    </script>
+</body>
+</html>
+
